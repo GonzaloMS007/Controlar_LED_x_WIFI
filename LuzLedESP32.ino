@@ -1,71 +1,80 @@
-#include <Arduino.h>
-#include <WiFi.h>
-#include "ESPAsyncWebSrv.h"
+#include <WiFi.h> // Incluimos la librería WiFi para la gestión de la conexión Wi-Fi
 
-const char *ssid = "WIFI_GRATIS";
-const char *password = "12345678910";
-const int LEDPIN = 22; // D22 en el ESP32
+const char* ssid     = "FAMILIA_MARTINEZ";  // Nombre de la red Wi-Fi
+const char* password = "74296000";  // Contraseña de la red Wi-Fi
 
-AsyncWebServer server(80);
+WiFiServer server(80);  // Creamos un objeto servidor Wi-Fi en el puerto 80
 
 void setup()
 {
-  // Inicia el monitor serial
-  Serial.begin(115200);
+    Serial.begin(115200);  // Inicializamos la comunicación serie con una velocidad de 115200 bps
+    pinMode(5, OUTPUT);      // Establecemos el modo del pin del LED
+    delay(10);
+    // Comenzamos conectándonos a una red WiFi
+    Serial.println();
+    Serial.println();
+    Serial.print("Conectando a ");
+    Serial.println(ssid);
+    WiFi.begin(ssid, password);  // Iniciamos la conexión a la red Wi-Fi con el nombre y la contraseña proporcionados
 
-  // Configura el pin del LED como salida
-  pinMode(LEDPIN, OUTPUT);
+    while (WiFi.status() != WL_CONNECTED) {  // Esperamos a que la conexión Wi-Fi se establezca
+        delay(500);
+        Serial.print(".");
+    }
 
-  // Conéctate a la red WiFi
-  WiFi.begin(ssid, password);
+    Serial.println("");
+    Serial.println("WiFi conectado.");
+    Serial.println("Dirección IP: ");
+    Serial.println(WiFi.localIP());
+    server.begin();  // Iniciamos el servidor Wi-Fi en el puerto 80
+}
 
-  // Espera a que se conecte a la red WiFi
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(1000);
-    Serial.println("Conectando a WiFi...");
+void loop(){
+ WiFiClient client = server.available();   // esperar clientes entrantes
+
+  if (client) {                             // si se recibe un cliente,
+    Serial.println("Nuevo Cliente.");           // imprimir un mensaje por el puerto serie
+    String currentLine = "";                // hacer una cadena para almacenar los datos entrantes del cliente
+    while (client.connected()) {            // bucle mientras el cliente esté conectado
+      if (client.available()) {             // si hay bytes para leer del cliente,
+        char c = client.read();             // leer un byte, luego
+        Serial.write(c);                    // imprimirlo por el monitor serie
+        if (c == '\n') {                    // si el byte es un carácter de nueva línea
+          // si la línea actual está en blanco, se tienen dos caracteres de nueva línea seguidos.
+          // ese es el final de la solicitud HTTP del cliente, así que enviar una respuesta:
+          if (currentLine.length() == 0) {
+            // Las cabeceras HTTP siempre comienzan con un código de respuesta (por ejemplo, HTTP/1.1 200 OK)
+            // y un tipo de contenido para que el cliente sepa lo que viene, luego una línea en blanco:
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println();
+
+            // el contenido de la respuesta HTTP sigue a la cabecera:
+            client.print("Haz clic <a href=\"/H\">aqui</a> para encender el LED en el pin 5.<br>");
+            client.print("Haz clic <a href=\"/L\">aqui</a> para apagar el LED en el pin 5.<br>");
+
+            // La respuesta HTTP termina con otra línea en blanco:
+            client.println();
+            // salir del bucle while:
+            break;
+          } else {    // si se recibe una nueva línea, entonces borrar currentLine:
+            currentLine = "";
+          }
+        } else if (c != '\r') {  // si se recibe cualquier cosa que no sea un carácter de retorno de carro,
+          currentLine += c;      // agregarlo al final de currentLine
+        }
+
+        // Comprobar si la solicitud del cliente fue "GET /H" o "GET /L":
+        if (currentLine.endsWith("GET /H")) {
+          digitalWrite(5, HIGH);               // GET /H enciende el LED
+        }
+        if (currentLine.endsWith("GET /L")) {
+          digitalWrite(5, LOW);                // GET /L apaga el LED
+        }
+      }
+    }
+    // cerrar la conexión:
+    client.stop();
+    Serial.println("Cliente Desconectado.");
   }
-
-  // Imprime la dirección IP en el monitor serial cuando está conectado
-  Serial.println("Conexión exitosa a WiFi");
-  Serial.println("Dirección IP: " + WiFi.localIP().toString());
-
-  // Configura las rutas del servidor web
-  server.on("/", HTTP_GET, handleRoot);
-  server.begin();
-}
-
-void loop()
-{
-  // Establece el estado del LED en alto (encendido)
-  digitalWrite(LEDPIN, HIGH);
-
-  // Opcional: Agrega un pequeño retraso si es necesario
-  delay(100);
-
-}
-
-
-void handleRoot(AsyncWebServerRequest *request)
-{
-  // Maneja la solicitud de la página principal
-  String html = "<html><body><h1>Control LED</h1>";
-  html += "<p><a href='/on'><button>Encender LED</button></a></p>";
-  html += "<p><a href='/off'><button>Apagar LED</button></a></p>";
-  html += "</body></html>";
-  request->send(200, "text/html", html);
-}
-
-void handleOn(AsyncWebServerRequest *request)
-{
-  // Maneja la solicitud para encender el LED
-  digitalWrite(LEDPIN, HIGH);
-  request->send(200, "text/plain", "LED Encendido");
-}
-
-void handleOff(AsyncWebServerRequest *request)
-{
-  // Maneja la solicitud para apagar el LED
-  digitalWrite(LEDPIN, LOW);
-  request->send(200, "text/plain", "LED Apagado");
 }
